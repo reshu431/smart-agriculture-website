@@ -1,0 +1,287 @@
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+
+// Replace with your WiFi credentials
+const char* ssid = "YOUR_WIFI_NAME";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+AsyncWebServer server(80);
+
+// Your full HTML stored in flash memory
+const char index_html[] PROGMEM = R"rawliteral(
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Agriculture</title>
+
+<style>
+/* ===== YOUR FULL CSS (UNCHANGED) ===== */
+
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+font-family:Arial,sans-serif;
+}
+
+body{
+background:url('https://images.unsplash.com/photo-1500937386664-56d1dfef3854?w=1600') no-repeat center center/cover;
+background-size:cover;
+background-attachment:fixed;
+min-height:100vh;
+color:white;
+overflow-x:hidden;
+position:relative;
+}
+
+body::before{
+content:'';
+position:fixed;
+top:0;
+left:0;
+width:100%;
+height:100%;
+background:rgba(0,0,0,0.45);
+z-index:-1;
+}
+
+.container{
+width:90%;
+max-width:1200px;
+margin:auto;
+padding:20px;
+}
+
+/* LIVE PRICE TICKER */
+.ticker-wrap{
+width:100%;
+overflow:hidden;
+background:#1b5e20;
+padding:12px 0;
+position:sticky;
+top:0;
+z-index:999;
+border-bottom:3px solid #81c784;
+}
+
+.ticker{
+display:inline-block;
+white-space:nowrap;
+padding-left:100%;
+animation:ticker 20s linear infinite;
+font-size:20px;
+font-weight:bold;
+color:white;
+}
+
+@keyframes ticker{
+0%{transform:translateX(0);}
+100%{transform:translateX(-100%);}
+}
+
+/* PAGE */
+.page{display:none;animation:fade 0.5s ease;}
+.active{display:block;}
+
+@keyframes fade{
+from{opacity:0;transform:translateY(20px);}
+to{opacity:1;transform:translateY(0);}
+}
+
+/* BUTTONS */
+button{
+padding:14px 28px;
+border:none;
+border-radius:10px;
+background:#1b5e20;
+color:white;
+font-size:16px;
+cursor:pointer;
+margin-top:15px;
+transition:0.3s;
+}
+
+button:hover{
+background:#2e7d32;
+transform:scale(1.05);
+}
+
+.homeBtn{
+position:fixed;
+top:70px;
+right:20px;
+background:#ff9800;
+z-index:1000;
+}
+
+.backBtn{
+position:fixed;
+top:70px;
+left:20px;
+background:#1565c0;
+z-index:1000;
+}
+
+.card-grid{
+display:grid;
+grid-template-columns:repeat(4,1fr);
+gap:20px;
+margin-top:30px;
+}
+
+.card{
+background:rgba(255,255,255,0.85);
+color:black;
+padding:20px;
+border-radius:20px;
+}
+
+@media screen and (max-width:768px){
+.card-grid{grid-template-columns:repeat(2,1fr);}
+}
+
+@media screen and (max-width:480px){
+.card-grid{grid-template-columns:1fr;}
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="ticker-wrap">
+<div class="ticker">
+🌾 Rice ₹52/kg 🧅 Onion ₹40/kg 🍅 Tomato ₹30/kg 🥔 Potato ₹24/kg
+</div>
+</div>
+
+<div class="container">
+
+<div class="page active" id="loginPage">
+<h1>Smart Agriculture</h1>
+<input id="username" placeholder="Username">
+<input id="password" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+</div>
+
+<div class="page" id="languagePage">
+<h1>Select Language</h1>
+<button onclick="setLanguage('en')">English</button>
+<button onclick="setLanguage('te')">Telugu</button>
+<button onclick="setLanguage('hi')">Hindi</button>
+</div>
+
+<div class="page" id="farmingPage">
+<h1>Farming Types</h1>
+
+<div class="card-grid">
+<div class="card" onclick="showCrops('openField')">Open Field</div>
+<div class="card" onclick="showCrops('greenHouse')">Green House</div>
+<div class="card" onclick="showCrops('mushroom')">Mushroom</div>
+<div class="card" onclick="showCrops('homeFarm')">Home Farm</div>
+</div>
+
+<div id="cropInfo"></div>
+
+<button onclick="showPage('soilPage')">Next</button>
+</div>
+
+<div class="page" id="soilPage">
+<h1>Soil Analysis</h1>
+
+<select onchange="analyzeSoil(this.value)">
+<option>Black Soil</option>
+<option>Red Soil</option>
+<option>Sandy Soil</option>
+<option>Clay Soil</option>
+</select>
+
+<p id="waterText">Water info here</p>
+
+<button onclick="showPage('fertilizerPage')">Next</button>
+</div>
+
+<div class="page" id="fertilizerPage">
+<h1>Fertilizers</h1>
+<p>Organic & Chemical fertilizers info</p>
+<button onclick="showPage('climatePage')">Next</button>
+</div>
+
+<div class="page" id="climatePage">
+<h1>Climate Guidance</h1>
+<p>Crop season details here</p>
+</div>
+
+</div>
+
+<script>
+
+let selectedLanguage="en";
+
+function login(){
+showPage('languagePage');
+}
+
+function setLanguage(lang){
+selectedLanguage=lang;
+showPage('farmingPage');
+}
+
+function showPage(id){
+document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+document.getElementById(id).classList.add('active');
+}
+
+function showCrops(type){
+let box=document.getElementById("cropInfo");
+
+if(type==="openField") box.innerHTML="Rice, Wheat, Corn";
+if(type==="greenHouse") box.innerHTML="Tomato, Capsicum";
+if(type==="mushroom") box.innerHTML="Button Mushroom";
+if(type==="homeFarm") box.innerHTML="Spinach, Mint";
+}
+
+function analyzeSoil(type){
+let w=document.getElementById("waterText");
+
+if(type==="Black Soil") w.innerHTML="High water retention";
+if(type==="Red Soil") w.innerHTML="Medium water need";
+if(type==="Sandy Soil") w.innerHTML="Low water retention";
+if(type==="Clay Soil") w.innerHTML="Balanced moisture";
+}
+
+</script>
+
+</body>
+</html>
+
+)rawliteral";
+
+void setup() {
+  Serial.begin(115200);
+
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nConnected!");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html);
+  });
+
+  server.begin();
+}
+
+void loop() {
+  // Nothing needed here
+}
